@@ -2,6 +2,7 @@ package arrow.free
 
 import arrow.free.extensions.fx
 import arrow.test.UnitSpec
+import io.kotlintest.data.suspend.forall
 import io.kotlintest.shouldBe
 
 class TrampolineTest : UnitSpec() {
@@ -17,6 +18,17 @@ class TrampolineTest : UnitSpec() {
 
     "trampoline should support fx syntax" {
       tryfxsyntax(10000).runT() shouldBe true
+    }
+
+    "defer should be lazy" {
+      forall { x: TrampolineF<Int> ->
+        Trampoline.defer { x } shouldBe x
+      }
+    }
+
+    "defer should be lazy again" {
+      // this shouldn't throw an exception unless we try to run it
+      Trampoline.defer<Int> { throw RuntimeException("blablabla") }
     }
   }
 

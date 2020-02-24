@@ -1,6 +1,7 @@
 package arrow.free
 
 import arrow.Kind
+import arrow.core.Either
 import arrow.core.ForId
 import arrow.core.FunctionK
 import arrow.core.Id
@@ -8,6 +9,7 @@ import arrow.core.NonEmptyList
 import arrow.core.Option
 import arrow.core.Some
 import arrow.core.extensions.id.foldable.foldable
+import arrow.core.extensions.id.functor.functor
 import arrow.core.extensions.id.monad.monad
 import arrow.core.extensions.id.traverse.traverse
 import arrow.core.extensions.nonemptylist.monad.monad
@@ -31,6 +33,7 @@ import arrow.test.laws.MonadLaws
 import arrow.test.laws.TraverseLaws
 import arrow.typeclasses.Eq
 import arrow.typeclasses.EqK
+import io.kotlintest.data.suspend.forall
 import io.kotlintest.properties.Gen
 import io.kotlintest.shouldBe
 
@@ -125,13 +128,62 @@ class FreeTest : UnitSpec() {
     }
 
     "free should support fx syntax" {
-      val n1 = 1
-      val n2 = 2
-      Free.fx<ForId, Int> {
-        val v1 = Free.just<ForId, Int>(n1).bind()
-        val v2 = Free.just<ForId, Int>(n2).bind()
-        v1 + v2
-      }.run(Id.monad()) shouldBe Id(n1 + n2)
+      forall { n1: Int, n2: Int ->
+        Free.fx<ForId, Int> {
+          val f1 = Free.just<ForId, Int>(n1).bind()
+          val f2 = Free.just<ForId, Int>(n2).bind()
+          f1 + f2
+        }.run(Id.monad()) shouldBe Id(n1 + n2)
+      }
+    }
+
+    "defer should be lazy" {
+      forall { x: Free<ForId, Int> ->
+        Free.defer { x } shouldBe x
+      }
+    }
+
+    "defer should be lazy again" {
+      // this shouldn't throw an exception unless we try to run it
+      Free.defer<ForId, Int> { throw RuntimeException("blablabla") }
+    }
+
+    "roll should absorb a step into the free monad" {
+      forall { x: Int ->
+        Free.roll<ForId, Int>(
+          Id.just(Free.just<ForId, Int>(x))
+        ).run(Id.monad()) shouldBe Id(x)
+      }
+    }
+
+    "resume should retrieve a value just injected into the free monad" {
+      forall { x: Int ->
+        val just = Free.just<ForId, Int>(x)
+        just.resume(Id.functor()) shouldBe Either.Right(x)
+      }
+    }
+
+    "resume should retrieve a deferred step" {
+      forall { x: Free<ForId, Int> ->
+        val just = Free.defer<ForId, Int> { x }
+        just.resume(Id.functor()) shouldBe Either.Right(x)
+      }
+    }
+
+    "resume should retrieve a value just lifted into the free monad" {
+      forall { x: Int ->
+        val just = Free.liftF<ForId, Int>(Id.just(x))
+        just.resume(Id.functor()) shouldBe Either.Right(x)
+      }
+    }
+
+    "resume should retrieve a rolled step into the free monad" {
+      forall { x: Int ->
+        val just = Free.roll<ForId, Int>(
+          Id.just(Free.just<ForId, Int>(x))
+        )
+        just.resume(Id.functor()) shouldBe Either.Right(x)
+      }
     }
   }
 }
