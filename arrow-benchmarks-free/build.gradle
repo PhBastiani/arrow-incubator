@@ -1,33 +1,43 @@
+buildscript {
+    repositories {
+        maven { url "https://dl.bintray.com/47deg/hood" }
+    }
+    
+    dependencies {
+        classpath "com.47deg:hood:0.8.0"
+    }
+    ext {
+        JMH_RESULT_FOR_ARROW = "$rootDir/benchmarks-arrow.json"
+        JMH_RESULT_FOR_CATS = "$rootDir/benchmarks-cats.json"
+    }
+}
+
 plugins {
-    id "me.champeau.gradle.jmh" version "$JMH_PLUGIN_VERSION"
-    id "io.morethan.jmhreport" version "$JMH_REPORT_PLUGIN_VERSION"
-	
-	id "base"
+    id "base"
     id "org.jetbrains.kotlin.jvm"
     id "org.jetbrains.kotlin.kapt"
     id "net.rdrei.android.buildtimetracker"
+    id "org.jlleitschuh.gradle.ktlint"
     id "ru.vyarus.animalsniffer"
-	
-	id "scala"
+
+    id "me.champeau.gradle.jmh" version "$JMH_PLUGIN_VERSION"
+    id "io.morethan.jmhreport" version "$JMH_REPORT_PLUGIN_VERSION"
+    id "scala"
 }
 
-repositories {
-    maven { url "https://jitpack.io" }
-}
+apply from: "$SUBPROJECT_CONF"
+apply plugin: "com.47deg.hood"
 
 dependencies {
     compile project(":arrow-free-data")
-	compile project(":arrow-free")
+    compile project(":arrow-free")
     compile "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$KOTLIN_VERSION"
     compile "org.jetbrains.kotlinx:kotlinx-coroutines-core:$KOTLINX_COROUTINES_VERSION"
-    compileOnly "org.openjdk.jmh:jmh-core:1.22"
-	
-	api "org.scala-lang:scala-library:$SCALA_LIBRARY_VERSION"
-	api "org.typelevel:cats-free_2.13:$CATS_EFFECT_VERSION"
+    compileOnly "org.openjdk.jmh:jmh-core:$JMH_CORE_VERSION"
+		
+    api "org.scala-lang:scala-library:$SCALA_LIBRARY_VERSION"
+    api "org.typelevel:cats-free_2.13:$CATS_EFFECT_VERSION"
 }
-
-apply plugin: "me.champeau.gradle.jmh"
-apply plugin: "io.morethan.jmhreport"
 
 jmh {
     resultFormat = 'json'
@@ -47,3 +57,42 @@ jmhReport {
 }
 
 tasks.jmh.finalizedBy tasks.jmhReport
+
+task jmhForArrow {
+    doLast {
+        jmh.include = [
+            'arrow.benchmarks.TrampolineBench.trampoline',
+            'arrow.benchmarks.TrampolineBench.trampolineSST'
+        ]
+        jmh.resultsFile = file(JMH_RESULT_FOR_ARROW)
+    }
+    finalizedBy "jmh"
+}
+
+task jmhForCats {
+    doLast {
+        jmh.include = [
+            'cats.benchmarks.TrampolineBench.trampoline',
+            'cats.benchmarks.TrampolineBench.trampolineSST'
+        ]
+        jmh.resultsFile = file(JMH_RESULT_FOR_CATS)
+    }
+    finalizedBy "jmh"
+}
+
+compareBenchmarksCI {
+    previousBenchmarkPath = file(JMH_RESULT_FOR_CATS)
+    currentBenchmarkPath = [file(JMH_RESULT_FOR_ARROW)]
+    generalThreshold = 10.0
+    outputToFile = true
+    outputFormat = "json"
+    token = System.getenv("CI_TOKEN")
+    repositoryOwner = "arrow-kt"
+    repositoryName = "arrow-incubator"
+    pullRequestSha = System.getenv("GITHUB_SHA")
+    pullRequestNumber = System.getenv("PULL_REQUEST_NUMBER")?.toInteger()
+}
+
+repositories {
+    maven { url "https://jitpack.io" }
+}
