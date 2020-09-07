@@ -5,7 +5,6 @@ import arrow.core.Either
 import arrow.core.Tuple2
 import arrow.core.Tuple3
 import arrow.core.andThen
-import arrow.core.internal.AtomicRefW
 import arrow.extension
 import arrow.fx.IO
 import arrow.fx.RacePair
@@ -49,17 +48,18 @@ interface WriterTBracket<W, F> : Bracket<WriterTPartialOf<W, F>, Throwable>, Wri
     use: (A) -> WriterTOf<W, F, B>
   ): WriterT<W, F, B> = MM().run {
     MD().run {
-      val atomic: AtomicRefW<W> = AtomicRefW(empty())
-      WriterT(value().bracketCase(use = { wa ->
-        WriterT(wa.just()).flatMap(use).value()
-      }, release = { wa, exitCase ->
-        val r = release(wa.b, exitCase).value()
-        when (exitCase) {
-          is ExitCase.Completed -> r.flatMap { (l, _) -> later { atomic.value = l } }
-          else -> r.unit()
+      WriterT(Ref(empty()).flatMap { ref ->
+        value().bracketCase(use = { wa ->
+          WriterT(wa.just()).flatMap(use).value()
+        }, release = { wa, exitCase ->
+          val r = release(wa.b, exitCase).value()
+          when (exitCase) {
+            is ExitCase.Completed -> r.flatMap { (l, _) -> ref.set(l) }
+            else -> r.unit()
+          }
+        }).flatMap { (w, b) ->
+          ref.get().map { ww -> Tuple2(w.combine(ww), b) }
         }
-      }).map { (w, b) ->
-        Tuple2(w.combine(atomic.value), b)
       })
     }
   }
@@ -177,7 +177,7 @@ interface WriterTMonadIO<W, F> : MonadIO<WriterTPartialOf<W, F>>, WriterTMonad<W
   fun FIO(): MonadIO<F>
   override fun MF(): Monad<F> = FIO()
   override fun MM(): Monoid<W>
-  override fun <A> IO<Nothing, A>.liftIO(): Kind<WriterTPartialOf<W, F>, A> = FIO().run {
+  override fun <A> IO<A>.liftIO(): Kind<WriterTPartialOf<W, F>, A> = FIO().run {
     WriterT.liftF(liftIO(), MM(), this)
   }
 }
